@@ -104,6 +104,7 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
         final float y = translateY(faceBoundingBox.centerY());
 
         // [TODO] Draw real time masks for a single face
+        canvas.drawCircle(x,y, 20, mFacePositionPaint);
 
     }
 

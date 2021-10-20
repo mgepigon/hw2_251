@@ -3,9 +3,12 @@ package edu.ucsb.ece150.maskme;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageCapture;
 import androidx.camera.core.ImageCaptureException;
 import androidx.camera.core.ImageProxy;
+import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
@@ -21,6 +24,7 @@ import android.graphics.Matrix;
 import android.media.Image;
 import android.os.Bundle;
 import android.util.Log;
+import android.util.Size;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -79,12 +83,14 @@ public class FaceTrackerActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_face_tracker);
 
+        //Create the toolbar
         final Toolbar myToolbar = findViewById(R.id.appToolbar);
         setSupportActionBar(myToolbar);
 
         mPreviewView = findViewById(R.id.previewView);
         mGraphicOverlay = findViewById(R.id.faceOverlay);
 
+        //Create capture button
         mCenterButton = findViewById(R.id.centerButton);
         mCenterButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -100,8 +106,9 @@ public class FaceTrackerActivity extends AppCompatActivity {
 
                                     @SuppressLint("UnsafeExperimentalUsageError")
                                     final Image image = imageProxy.getImage();
-
-                                    // TODO: Save captured image and get faces for use in preview screen
+                                    mCapturedImage = convertImageToBitmap(image);
+                                    imageProxy.close();
+                                    // TODO: Save captured' image and get faces for use in preview screen
                                 }
 
                                 @Override
@@ -120,13 +127,14 @@ public class FaceTrackerActivity extends AppCompatActivity {
             }
         });
 
+        //By default, no preview button
         previewButtonVisible = false;
         mLeftButton = findViewById(R.id.leftButton);
         mLeftButton.setVisibility(View.GONE);
         mLeftButton.setOnClickListener(view -> {
             switch(buttonsMode) {
                 case PREVIEW_CAPTURE:
-                    mImageView.setImageBitmap(mCapturedImage);
+                    mImageView.setImageBitmap(rotateImage(mCapturedImage, 90));
                     mPreviewView.addView(mImageView);
                     mPreviewView.bringChildToFront(mImageView);
 
@@ -134,7 +142,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
                     mCenterButton.setText("Save");
                     buttonsMode = ButtonsMode.BACK_SAVE;
 
-                    drawMasksOnPreview(mCapturedImage);
+                    //drawMasksOnPreview(mCapturedImage);
                     break;
                 case BACK_SAVE:
                     mPreviewView.removeView(mImageView);
@@ -250,17 +258,49 @@ public class FaceTrackerActivity extends AppCompatActivity {
      * at long distances.
      */
     private void createCameraSource() {
-        // [TODO] Create a face detector for real time face detection
+        // Image capture object set up -- gives user takePicture() capability
+        mImageCapture = new ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build();
 
-        // 1. Set up image capture to take pictures using camera stream
+        // Class that sets up the analyzer -- post processing
+        final ImageAnalysis imageAnalysis =
+                new ImageAnalysis.Builder()
+                    .setTargetResolution(new Size(1280, 720))
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build();
 
-        // 2. Create an image analysis buffer to stream camera frames to a face detector
+        // Analyzes image
+        imageAnalysis.setAnalyzer(new ThreadPerTaskExecutor(), (imageProxy)-> {
+            @SuppressLint("UnsafeExperimentalUsageError")
+            final Image image = imageProxy.getImage();
+            // for the image captured, grab degrees of rotation
+            if (image!=null){
+                final InputImage inputImage = InputImage.fromMediaImage(image,
+                        imageProxy.getImageInfo().getRotationDegrees());
+            }
+            imageProxy.close();
+        });
 
-        // 3. Create an analyzer that analyzes incoming images for faces on a new thread
+        // Set up camera
+        mCameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        mCameraProviderFuture.addListener(()-> {
+            try {
+                // Create camera provider
+                final ProcessCameraProvider cameraProvider = mCameraProviderFuture.get();
 
-        // 4. Set up preview view for a live camera feed on the app
+                // Create a preview for the camera input to sit in
+                final Preview preview = new Preview.Builder().build();
+                final PreviewView previewView = findViewById(R.id.previewView);
+                preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
-        // 5. Finally, specify camera to use and bind all of the above to the camera lifecycle
+                // Put it all together along with imageAnalysis block
+                cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA,
+                        mImageCapture, imageAnalysis, preview);
+            } catch (Exception e) {
+                Log.e("MaskMe", "Unable to get camera provider.", e);
+            }
+        }, ContextCompat.getMainExecutor(this));
     }
 
     @Override
