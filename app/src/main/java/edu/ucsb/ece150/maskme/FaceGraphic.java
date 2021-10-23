@@ -98,7 +98,6 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
         if (mFace == null) {
             return;
         }
-
         // Get bounding box for face
         final Rect faceBoundingBox = mFace.getBoundingBox();
         final RectF box = translateRect(faceBoundingBox);
@@ -140,6 +139,6 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
     }
 
     private RectF translateRect(Rect rect) {
-        return new RectF(translateX(rect.left) + ID_X_OFFSET, translateY(rect.top) - 1.5f * ID_Y_OFFSET, translateX(rect.right) + ID_X_OFFSET, translateY(rect.bottom) + 0.5f * ID_Y_OFFSET);
+        return new RectF(translateX(rect.left) + ID_X_OFFSET, translateY(rect.top) - 1.5f * ID_Y_OFFSET, translateX(rect.right) + ID_X_OFFSET, translateY(rect.bottom));
     }
 }

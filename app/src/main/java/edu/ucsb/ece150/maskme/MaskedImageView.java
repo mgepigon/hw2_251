@@ -1,5 +1,6 @@
 package edu.ucsb.ece150.maskme;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -12,6 +13,8 @@ import android.graphics.drawable.BitmapDrawable;
 import android.util.Log;
 
 import androidx.appcompat.widget.AppCompatImageView;
+import androidx.camera.view.PreviewView;
+
 import com.google.mlkit.vision.face.Face;
 
 import java.util.List;
@@ -35,35 +38,28 @@ public class MaskedImageView extends AppCompatImageView {
         this.context = context;
     }
 
+    @SuppressLint("DrawAllocation")
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        //mBitmap --
-        mBitmap = ((BitmapDrawable) getDrawable()).getBitmap();
-        if (mBitmap == null) {
+
+        //grab image and resize it
+        mBitmap = ((BitmapDrawable)getDrawable()).getBitmap();
+        Rect bounded = new Rect(0,0, getWidth(), getHeight());
+
+        if (mBitmap==null){
             return;
         }
-        double viewWidth = getWidth();
-        double viewHeight = getHeight();
-        double imageWidth = mBitmap.getWidth();
-        double imageHeight = mBitmap.getHeight();
 
-        Log.d(TAG, "Bitmap Preview Width: " + mBitmap.getWidth());
-        Log.d(TAG, "Bitmap Preview Height: "+ mBitmap.getHeight());
-        //Makes the same size as preview
-        double scale = .63f;
-                //Math.min(viewWidth / imageWidth, viewHeight / imageHeight);
+        //Draw image on top of image view, bounded by image view boundaries
+        canvas.drawBitmap(mBitmap, null, bounded, null);
 
-        //Draw the image still
-        drawBitmap(canvas, scale);
-
-        //Draw masks depending on the type that is chosen
-        Bitmap mask;
+        //With list of faces, draw masks
         if (faces == null){
             return;
         }
         Log.d(TAG, "Size of list: " + faces.size());
-
+        Bitmap mask;
         for (Face face : faces) {
             final Rect faceBoundingBox = face.getBoundingBox();
             final RectF box = translateRect(faceBoundingBox);
@@ -71,7 +67,7 @@ public class MaskedImageView extends AppCompatImageView {
                 case NONE:
                     mPaint.setColor(Color.WHITE);
                     mPaint.setStyle(Paint.Style.STROKE);
-                    canvas.drawRect(faceBoundingBox, mPaint);
+                    canvas.drawRect(box, mPaint);
                     break;
                 case FIRST:
                     mask = BitmapFactory.decodeResource(context.getResources(), R.drawable.squid_circle);
@@ -87,28 +83,17 @@ public class MaskedImageView extends AppCompatImageView {
         }
     }
 
-    public float scale(float x){
-        return x * 1.0f;
-    }
-
     private RectF translateRect(Rect rect) {
-        return new RectF(scale(rect.left)+ID_X_OFFSET,
-                scale(rect.top)-1.5f*ID_Y_OFFSET,
-                scale(rect.right)+ID_X_OFFSET,
-                scale(rect.bottom)+0.5f*ID_Y_OFFSET);
+        return new RectF(rect.left,
+                rect.top-1.5f*ID_Y_OFFSET,
+                rect.right,
+                rect.bottom+0.5f*ID_Y_OFFSET);
     }
 
     protected void drawMask(List<Face> faces, MaskType maskType){
         this.faces = faces;
         this.maskType = maskType;
         this.invalidate();
-    }
-
-    private void drawBitmap(Canvas canvas, double scale) {
-        double imageWidth = mBitmap.getWidth();
-        double imageHeight = mBitmap.getHeight();
-        Rect destBounds = new Rect(0, 0, (int)(imageWidth * scale), (int)(imageHeight * scale));
-        canvas.drawBitmap(mBitmap, null, destBounds, null);
     }
 
     public void noFaces() {

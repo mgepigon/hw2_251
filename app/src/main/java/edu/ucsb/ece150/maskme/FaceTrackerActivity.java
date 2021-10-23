@@ -67,7 +67,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
     private FaceDetector mFaceDetector;
     private ImageCapture mImageCapture;
     private Bitmap mCapturedImage;
-    private MaskedImageView mImageView;
+    public MaskedImageView mImageView;
     private PreviewView mPreviewView;
 
     public int trueHeight;
@@ -213,8 +213,6 @@ public class FaceTrackerActivity extends AppCompatActivity {
         if(cameraPermissionGranted == PackageManager.PERMISSION_GRANTED) {
             mCameraProviderFuture = ProcessCameraProvider.getInstance(this);
             mCameraProviderFuture.addListener(() -> {
-                trueHeight = mPreviewView.getHeight();
-                trueWidth = mPreviewView.getWidth();
                 createCameraSource();
             }, ContextCompat.getMainExecutor(this));
         } else {
@@ -289,8 +287,8 @@ public class FaceTrackerActivity extends AppCompatActivity {
         if (bitmap == null) return;
         Log.d(TAG, "Bitmap Preview Width " + bitmap.getWidth());
         Log.d(TAG, "Bitmap Preview Height" + bitmap.getHeight());
-        Bitmap resized = Bitmap.createScaledBitmap(bitmap, 640,480,false );
-        //Captured image shown in preview
+        Bitmap resized = Bitmap.createScaledBitmap(bitmap, trueWidth, trueHeight,false );
+        //Captured image shown in preview -- do processing on it
         final InputImage image = InputImage.fromBitmap(resized, 0);
         //Grab which mask was selected
         SharedPreferences selectedMaskPref = getSharedPreferences("maskSelect", Context.MODE_PRIVATE);
@@ -431,6 +429,14 @@ public class FaceTrackerActivity extends AppCompatActivity {
             final Preview preview = new Preview.Builder().build();
             preview.setSurfaceProvider(mPreviewView.getSurfaceProvider());
 
+            mPreviewView.post(new Runnable() {
+                @Override
+                public void run() {
+                    trueHeight = mPreviewView.getHeight();
+                    trueWidth = mPreviewView.getWidth();
+                }
+            });
+
             // Put it all together along with imageAnalysis block
             cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA,
                     mImageCapture, imageAnalysis, preview);
@@ -444,7 +450,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
         super.onResume();
 
         // If you are using the front camera, change the last argument to true.
-        mGraphicOverlay.setCameraInfo(mPreviewView.getWidth(), mPreviewView.getHeight(), false);
+        mGraphicOverlay.setCameraInfo(trueWidth, trueHeight, false);
     }
 
     /**
