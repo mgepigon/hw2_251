@@ -25,6 +25,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.util.Log;
 
 import com.google.mlkit.vision.face.Face;
 
@@ -59,6 +60,7 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
     private volatile Face mFace;
 
     private Context context;
+
     FaceGraphic(GraphicOverlay overlay, Context context) {
         super(overlay);
         this.context = context;
@@ -100,15 +102,44 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
         // Get bounding box for face
         final Rect faceBoundingBox = mFace.getBoundingBox();
         final RectF box = translateRect(faceBoundingBox);
+        // Grab center coordinate of each face
         final float x = translateX(faceBoundingBox.centerX());
         final float y = translateY(faceBoundingBox.centerY());
 
-        // [TODO] Draw real time masks for a single face
-        canvas.drawCircle(x,y, 20, mFacePositionPaint);
+        //set own color -- white
+        Paint color = new Paint();
+        color.setColor(COLOR_CHOICES[5]);
+        color.setStyle(Paint.Style.STROKE);
 
+        myPreferences = context.getSharedPreferences("maskSelect", Context.MODE_PRIVATE);
+        int selectedMask = myPreferences.getInt("selected", 69);
+        Log.d("FaceGraphicLog", "Mask Selected: " + selectedMask);
+        // [TODO] Draw real time masks for all faces
+
+        Bitmap mask;
+        switch (selectedMask) {
+            case 0:
+                //Draw rectangle that surrounds entire face
+                canvas.drawRect(box, color);
+                break;
+            case 1:
+                mask = BitmapFactory.decodeResource(context.getResources(),
+                        R.drawable.squid_circle);
+                //canvas.drawRect(box, color);
+                canvas.drawBitmap(mask, null, box, null);
+                break;
+            case 2:
+                mask = BitmapFactory.decodeResource(context.getResources(),
+                        R.drawable.squid_leader);
+                //canvas.drawRect(box, color);
+                canvas.drawBitmap(mask, null, box, null);
+                break;
+            default:
+                break;
+        }
     }
 
     private RectF translateRect(Rect rect) {
-        return new RectF(translateX(rect.left), translateY(rect.top), translateX(rect.right), translateY(rect.bottom));
+        return new RectF(translateX(rect.left) + ID_X_OFFSET, translateY(rect.top) - 1.5f * ID_Y_OFFSET, translateX(rect.right) + ID_X_OFFSET, translateY(rect.bottom) + 0.5f * ID_Y_OFFSET);
     }
 }

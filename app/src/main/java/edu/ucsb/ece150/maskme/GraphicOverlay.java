@@ -30,8 +30,8 @@ public class GraphicOverlay extends View {
 
     private int mPreviewWidth;
     private int mPreviewHeight;
-    private float mWidthScaleFactor = 1.0f;
-    private float mHeightScaleFactor = 1.0f;
+    private float mWidthScaleFactor = 3.3f;
+    private float mHeightScaleFactor = 3.3f;
 
     private boolean mIsCameraFacingFront = false;
     private HashSet<Graphic> mGraphics = new HashSet<>();

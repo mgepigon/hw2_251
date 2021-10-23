@@ -5,8 +5,16 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
-        android:id="@+id/example"
-        android:title="Example"
+        android:id="@+id/box"
+        android:title="Bounding Box"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/circle"
+        android:title="Squid Circle Mask"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/leader"
+        android:title="Squid Leader Mask"
         app:showAsAction="never" />
 
 </menu>

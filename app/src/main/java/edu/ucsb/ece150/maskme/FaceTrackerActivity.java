@@ -17,12 +17,15 @@ import androidx.core.content.ContextCompat;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.media.Image;
 import android.os.Bundle;
+import android.os.Environment;
 import android.util.Log;
 import android.util.Size;
 import android.view.Menu;
@@ -30,21 +33,32 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
+import android.widget.Toast;
 
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
+import com.google.android.gms.tasks.Tasks;
 import com.google.android.material.snackbar.Snackbar;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.face.Face;
+import com.google.mlkit.vision.face.FaceDetection;
 import com.google.mlkit.vision.face.FaceDetector;
+import com.google.mlkit.vision.face.FaceDetectorOptions;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Activity for the face tracker app.  This app detects faces with the rear facing camera, and draws
  * overlay graphics to indicate the position, size, and ID of each face.
  */
 public class FaceTrackerActivity extends AppCompatActivity {
-    private static final String TAG = "FaceTracker";
+    private static final String TAG = "FaceTrackerLog";
 
     private GraphicOverlay mGraphicOverlay;
 
@@ -56,6 +70,9 @@ public class FaceTrackerActivity extends AppCompatActivity {
     private MaskedImageView mImageView;
     private PreviewView mPreviewView;
 
+    public int trueHeight;
+    public int trueWidth;
+
     private static final int RC_HANDLE_GMS = 9001;
     private static final int RC_HANDLE_CAMERA_PERM = 2; // Request code for Camera Permission
 
@@ -64,7 +81,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
     }
 
     public enum MaskType {
-        FIRST, SECOND
+        NONE, FIRST, SECOND
     }
 
     private ButtonsMode buttonsMode = ButtonsMode.PREVIEW_CAPTURE;
@@ -72,8 +89,8 @@ public class FaceTrackerActivity extends AppCompatActivity {
     private Button mCenterButton;
     private Button mRightButton;
 
-    private boolean previewButtonVisible = false;
-    private MaskType maskTypeDrawn = MaskType.FIRST;
+    private boolean inPreview = false;
+    private MaskType maskTypeDrawn = MaskType.NONE;
 
     /**
      * Initializes the UI and initiates the creation of a face detector.
@@ -89,6 +106,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
 
         mPreviewView = findViewById(R.id.previewView);
         mGraphicOverlay = findViewById(R.id.faceOverlay);
+        mFaceTrackerFactory = new GraphicFaceTrackerFactory(mGraphicOverlay, getApplicationContext());
 
         //Create capture button
         mCenterButton = findViewById(R.id.centerButton);
@@ -96,7 +114,9 @@ public class FaceTrackerActivity extends AppCompatActivity {
             @Override
             public void onClick(View view) {
                 switch(buttonsMode) {
+                    //Press Capture
                     case PREVIEW_CAPTURE:
+                        inPreview = false;
                         mLeftButton.setVisibility(View.VISIBLE);
                         if (mImageCapture != null) {
                             mImageCapture.takePicture(new ThreadPerTaskExecutor(), new ImageCapture.OnImageCapturedCallback() {
@@ -106,11 +126,11 @@ public class FaceTrackerActivity extends AppCompatActivity {
 
                                     @SuppressLint("UnsafeExperimentalUsageError")
                                     final Image image = imageProxy.getImage();
+                                    //Toast.makeText(FaceTrackerActivity.this, "Captured!", Toast.LENGTH_LONG).show();
                                     mCapturedImage = convertImageToBitmap(image);
                                     imageProxy.close();
                                     // TODO: Save captured' image and get faces for use in preview screen
                                 }
-
                                 @Override
                                 public void onError(@NonNull ImageCaptureException e) {
                                     super.onError(e);
@@ -119,22 +139,50 @@ public class FaceTrackerActivity extends AppCompatActivity {
                             });
                         }
                         break;
+                    //Press Save
                     case BACK_SAVE:
                         // [TODO - for ECE 251 students only] Implement the Save feature.
+                        inPreview = false;
+                        //Check permissions
+                        if(ActivityCompat.checkSelfPermission(FaceTrackerActivity.this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == 0) {
+                            //Go to Storage Folder
+                            String root = Environment.getExternalStorageDirectory().toString() + "/Pictures";
+                            File myDir = new File(root);
+                            myDir.mkdirs();
+                            //String f_name = String.format("%d.jpeg", System.currentTimeMillis());
+                            String f_name = String.format("MaskMe.jpg", System.currentTimeMillis());
+                            File file = new File(myDir, f_name);
+                            if (file.exists()) file.delete();
+                            Log.i("LOAD", root + "/" + f_name);
+                            Toast.makeText(FaceTrackerActivity.this, "Saved!", Toast.LENGTH_LONG).show();
+                            try {
+                                FileOutputStream out = new FileOutputStream(file);
+                                mCapturedImage.compress(Bitmap.CompressFormat.JPEG, 100, out);
+                                out.flush();
+                                out.close();
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
+                        else{
+                            requestSavePermission();
+                        }
+                        break;
                     default:
                         break;
                 }
             }
         });
 
-        //By default, no preview button
-        previewButtonVisible = false;
         mLeftButton = findViewById(R.id.leftButton);
         mLeftButton.setVisibility(View.GONE);
         mLeftButton.setOnClickListener(view -> {
             switch(buttonsMode) {
+                //Press Preview
                 case PREVIEW_CAPTURE:
-                    mImageView.setImageBitmap(rotateImage(mCapturedImage, 90));
+                    inPreview = true;
+                    mCapturedImage = rotateImage(mCapturedImage, 90);
+                    mImageView.setImageBitmap(mCapturedImage);
                     mPreviewView.addView(mImageView);
                     mPreviewView.bringChildToFront(mImageView);
 
@@ -142,11 +190,11 @@ public class FaceTrackerActivity extends AppCompatActivity {
                     mCenterButton.setText("Save");
                     buttonsMode = ButtonsMode.BACK_SAVE;
 
-                    //drawMasksOnPreview(mCapturedImage);
+                    drawMasksOnPreview(mCapturedImage);
                     break;
+                //Press Back
                 case BACK_SAVE:
                     mPreviewView.removeView(mImageView);
-
                     mLeftButton.setText("Preview");
                     mCenterButton.setText("Capture");
                     buttonsMode = ButtonsMode.PREVIEW_CAPTURE;
@@ -165,6 +213,8 @@ public class FaceTrackerActivity extends AppCompatActivity {
         if(cameraPermissionGranted == PackageManager.PERMISSION_GRANTED) {
             mCameraProviderFuture = ProcessCameraProvider.getInstance(this);
             mCameraProviderFuture.addListener(() -> {
+                trueHeight = mPreviewView.getHeight();
+                trueWidth = mPreviewView.getWidth();
                 createCameraSource();
             }, ContextCompat.getMainExecutor(this));
         } else {
@@ -210,26 +260,93 @@ public class FaceTrackerActivity extends AppCompatActivity {
      */
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        SharedPreferences selectedMask = getSharedPreferences("maskSelect", Context.MODE_PRIVATE);
         switch(item.getItemId()) {
             // [TODO] Using this as an example, implement behavior when a mask option is pressed.
-            case R.id.example:
+            case R.id.box:
+                selectedMask.edit().putInt("selected", 0).apply();
+                Toast.makeText(FaceTrackerActivity.this, "Bounding Box!", Toast.LENGTH_LONG).show();
+                break;
+            case R.id.circle:
+                selectedMask.edit().putInt("selected", 1).apply();
+                Toast.makeText(FaceTrackerActivity.this, "Circle Mask!", Toast.LENGTH_LONG).show();
+                break;
+            case R.id.leader:
+                selectedMask.edit().putInt("selected", 2).apply();
+                Toast.makeText(FaceTrackerActivity.this, "Leader Mask!", Toast.LENGTH_LONG).show();
                 break;
             default:
                 break;
+        }
+        //Change masks even if in preview
+        if (inPreview){
+            drawMasksOnPreview(mCapturedImage);
         }
         return true;
     }
 
     private void drawMasksOnPreview(Bitmap bitmap) {
         if (bitmap == null) return;
-        final InputImage image = InputImage.fromBitmap(bitmap, 0);
-
+        Log.d(TAG, "Bitmap Preview Width " + bitmap.getWidth());
+        Log.d(TAG, "Bitmap Preview Height" + bitmap.getHeight());
+        Bitmap resized = Bitmap.createScaledBitmap(bitmap, 640,480,false );
+        //Captured image shown in preview
+        final InputImage image = InputImage.fromBitmap(resized, 0);
+        //Grab which mask was selected
+        SharedPreferences selectedMaskPref = getSharedPreferences("maskSelect", Context.MODE_PRIVATE);
+        int selectedMask = selectedMaskPref.getInt("selected", 69);
+        Log.d(TAG, "Mask Selected Preview: " + selectedMask);
+        switch(selectedMask){
+            case 0:
+                maskTypeDrawn=MaskType.NONE;
+                break;
+            case 1:
+                maskTypeDrawn=MaskType.FIRST;
+                break;
+            case 2:
+                maskTypeDrawn=MaskType.SECOND;
+                break;
+            default:
+                break;
+        }
+        //SCALE THIS IMAGE
         // TODO: Using the input image, call the face detector
-        // When complete, use mImageView.drawMask(faces) to draw faces on the mask
+        Task<List<Face>> result = mFaceDetector.process(image)
+                    .addOnSuccessListener(
+                            new OnSuccessListener<List<Face>>() {
+                                @Override
+                                public void onSuccess(List<Face> faces) {
+                                    // Task completed successfully
+                                    mFaceTrackerFactory.processFaces(faces);
+                                    // When complete, use mImageView.drawMask(faces) to draw faces on the mask
+                                    mImageView.drawMask(faces, maskTypeDrawn);
+                                }
+                            })
+                    .addOnFailureListener(
+                            new OnFailureListener() {
+                                @Override
+                                public void onFailure(@NonNull Exception e) {
+                                    // Task failed with an exception
+                                    Log.e(TAG,"Failed face detection on preview", e);
+                                }
+                            });
     }
 
     private void parseInputImage(InputImage image) {
         // TODO: Call the face detector using the input image and send to face tracker factory
+        if (buttonsMode == ButtonsMode.PREVIEW_CAPTURE){
+            final Task<List<Face>> task = mFaceDetector.process(image);
+            try {
+                List<Face> faces = Tasks.await(task);
+                mFaceTrackerFactory.processFaces(faces);
+            }
+            catch (Exception e){
+                Log.e(TAG,"Failed face detection", e);
+            }
+        }
+        else{
+            mFaceTrackerFactory.processFaces(Collections.emptyList());
+        }
     }
 
     /**
@@ -252,12 +369,26 @@ public class FaceTrackerActivity extends AppCompatActivity {
             .setAction("OK", view -> ActivityCompat.requestPermissions(thisActivity, permissions,RC_HANDLE_CAMERA_PERM)).show();
     }
 
+    private void requestSavePermission() {
+        Log.w(TAG, "Saving permission is not granted. Requesting permission.");
+
+        ActivityCompat.requestPermissions(FaceTrackerActivity.this, new String[]{Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+    }
+
     /**
      * Creates and starts the camera.  Note that this uses a higher resolution in comparison
      * to other detection examples to enable the barcode detector to detect small barcodes
      * at long distances.
      */
     private void createCameraSource() {
+        // Face Detector Initialization
+        final FaceDetectorOptions options =
+                new FaceDetectorOptions.Builder()
+                        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
+                        .enableTracking()
+                        .build();
+        mFaceDetector = FaceDetection.getClient(options);
+
         // Image capture object set up -- gives user takePicture() capability
         mImageCapture = new ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
@@ -266,7 +397,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
         // Class that sets up the analyzer -- post processing
         final ImageAnalysis imageAnalysis =
                 new ImageAnalysis.Builder()
-                    .setTargetResolution(new Size(1280, 720))
+                    //.setTargetResolution(new Size(trueWidth, trueHeight))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build();
 
@@ -274,33 +405,38 @@ public class FaceTrackerActivity extends AppCompatActivity {
         imageAnalysis.setAnalyzer(new ThreadPerTaskExecutor(), (imageProxy)-> {
             @SuppressLint("UnsafeExperimentalUsageError")
             final Image image = imageProxy.getImage();
-            // for the image captured, grab degrees of rotation
+            //Process image if exists
             if (image!=null){
+                //get bitmap->resize->back to image class
+//                resized = Bitmap.createScaledBitmap(convertImageToBitmap(image),1440, 2048, false);
+//                Log.d(TAG, "CropRect: " + image.getCropRect());
+//                Log.d(TAG, "Width Input Stream: " + image.getWidth());
+//                Log.d(TAG, "Height Input Stream: "+ image.getHeight());
                 final InputImage inputImage = InputImage.fromMediaImage(image,
                         imageProxy.getImageInfo().getRotationDegrees());
+                //IN WIDTH -- 1440, OUT WIDTH -- 960 --> 1.5
+                //OUT WIDTH -- 2048, OUT HEIGHT -- 720 --> 2.84
+                // process and find faces in picture
+                parseInputImage(inputImage);
             }
             imageProxy.close();
         });
 
         // Set up camera
-        mCameraProviderFuture = ProcessCameraProvider.getInstance(this);
-        mCameraProviderFuture.addListener(()-> {
-            try {
-                // Create camera provider
-                final ProcessCameraProvider cameraProvider = mCameraProviderFuture.get();
+        try {
+            // Create camera provider
+            final ProcessCameraProvider cameraProvider = mCameraProviderFuture.get();
 
-                // Create a preview for the camera input to sit in
-                final Preview preview = new Preview.Builder().build();
-                final PreviewView previewView = findViewById(R.id.previewView);
-                preview.setSurfaceProvider(previewView.getSurfaceProvider());
+            // Create a preview for the camera input to sit in
+            final Preview preview = new Preview.Builder().build();
+            preview.setSurfaceProvider(mPreviewView.getSurfaceProvider());
 
-                // Put it all together along with imageAnalysis block
-                cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA,
-                        mImageCapture, imageAnalysis, preview);
-            } catch (Exception e) {
-                Log.e("MaskMe", "Unable to get camera provider.", e);
-            }
-        }, ContextCompat.getMainExecutor(this));
+            // Put it all together along with imageAnalysis block
+            cameraProvider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA,
+                    mImageCapture, imageAnalysis, preview);
+        } catch (Exception e) {
+            Log.e("MaskMe", "Unable to get camera provider.", e);
+        }
     }
 
     @Override
