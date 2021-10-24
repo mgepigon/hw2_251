@@ -7,6 +7,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.PointF;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
@@ -17,6 +18,7 @@ import androidx.camera.view.PreviewView;
 
 import com.google.mlkit.vision.face.Face;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import edu.ucsb.ece150.maskme.FaceTrackerActivity.MaskType;
@@ -29,6 +31,9 @@ public class MaskedImageView extends AppCompatImageView {
     private FaceTrackerActivity.MaskType maskType = FaceTrackerActivity.MaskType.NONE;
     Paint mPaint = new Paint();
     private Bitmap mBitmap;
+    private Bitmap result;
+
+    private ArrayList<PointF> touchDraw = new ArrayList<PointF>();;
 
     private static final float ID_Y_OFFSET = 50.0f;
     private static final float ID_X_OFFSET = -50.0f;
@@ -38,26 +43,32 @@ public class MaskedImageView extends AppCompatImageView {
         this.context = context;
     }
 
+    public Bitmap save(){
+        return result;
+    }
+
     @SuppressLint("DrawAllocation")
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
+        //Paint Properties
+        mPaint.setColor(Color.WHITE);
+        mPaint.setStyle(Paint.Style.STROKE);
 
-        //grab image and resize it
+        //Create new canvas for Exporting
+        result = Bitmap.createBitmap(getWidth(), getHeight(), Bitmap.Config.RGB_565);
+        Canvas saveCanvas = new Canvas(result);
+
+        //Grab image, create bounding box
         mBitmap = ((BitmapDrawable)getDrawable()).getBitmap();
         Rect bounded = new Rect(0,0, getWidth(), getHeight());
 
-        if (mBitmap==null){
-            return;
-        }
+        //Draw image on top of image view, bounded by mImageView boundaries
+        saveCanvas.drawBitmap(mBitmap, null, bounded, null);
 
-        //Draw image on top of image view, bounded by image view boundaries
-        canvas.drawBitmap(mBitmap, null, bounded, null);
+        //Mask Drawing
+        if (faces == null){ return; }
 
-        //With list of faces, draw masks
-        if (faces == null){
-            return;
-        }
         Log.d(TAG, "Size of list: " + faces.size());
         Bitmap mask;
         for (Face face : faces) {
@@ -65,21 +76,33 @@ public class MaskedImageView extends AppCompatImageView {
             final RectF box = translateRect(faceBoundingBox);
             switch (maskType) {
                 case NONE:
-                    mPaint.setColor(Color.WHITE);
-                    mPaint.setStyle(Paint.Style.STROKE);
-                    canvas.drawRect(box, mPaint);
+                    mPaint.setStrokeWidth(1);
+                    saveCanvas.drawRect(faceBoundingBox, mPaint);
+                    canvas.drawRect(faceBoundingBox, mPaint);
                     break;
                 case FIRST:
                     mask = BitmapFactory.decodeResource(context.getResources(), R.drawable.squid_circle);
+                    saveCanvas.drawBitmap(mask, null, box, null);
                     canvas.drawBitmap(mask, null, box, null);
                     break;
                 case SECOND:
                     mask = BitmapFactory.decodeResource(context.getResources(), R.drawable.squid_leader);
+                    saveCanvas.drawBitmap(mask, null, box, null);
                     canvas.drawBitmap(mask, null, box, null);
                     break;
                 default:
                     break;
             }
+        }
+
+        //Touch Drawing
+        mPaint.setStrokeWidth(25);
+        mPaint.setStrokeJoin(Paint.Join.ROUND);
+        if (touchDraw.size() == 0){ return; }
+
+        for (PointF p : touchDraw){
+            saveCanvas.drawPoint(p.x,p.y,mPaint);
+            canvas.drawPoint(p.x, p.y, mPaint);
         }
     }
 
@@ -93,6 +116,17 @@ public class MaskedImageView extends AppCompatImageView {
     protected void drawMask(List<Face> faces, MaskType maskType){
         this.faces = faces;
         this.maskType = maskType;
+        this.invalidate();
+    }
+
+    public void clear(){
+        touchDraw.clear();
+        this.invalidate();
+    }
+
+    //Grab coordinates
+    public void grab(float xf, float yf){
+        touchDraw.add(new PointF(xf,yf));
         this.invalidate();
     }
 

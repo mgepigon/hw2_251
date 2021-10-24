@@ -14,6 +14,9 @@ import androidx.camera.view.PreviewView;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.view.GestureDetector;
+import android.view.MotionEvent;
+
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -27,7 +30,6 @@ import android.media.Image;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
-import android.util.Size;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -67,7 +69,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
     private FaceDetector mFaceDetector;
     private ImageCapture mImageCapture;
     private Bitmap mCapturedImage;
-    public MaskedImageView mImageView;
+    private MaskedImageView mImageView;
     private PreviewView mPreviewView;
 
     public int trueHeight;
@@ -119,6 +121,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
                         inPreview = false;
                         mLeftButton.setVisibility(View.VISIBLE);
                         if (mImageCapture != null) {
+                            Toast.makeText(FaceTrackerActivity.this, "Captured!", Toast.LENGTH_SHORT).show();
                             mImageCapture.takePicture(new ThreadPerTaskExecutor(), new ImageCapture.OnImageCapturedCallback() {
                                 @Override
                                 public void onCaptureSuccess(@NonNull ImageProxy imageProxy) {
@@ -126,8 +129,15 @@ public class FaceTrackerActivity extends AppCompatActivity {
 
                                     @SuppressLint("UnsafeExperimentalUsageError")
                                     final Image image = imageProxy.getImage();
-                                    //Toast.makeText(FaceTrackerActivity.this, "Captured!", Toast.LENGTH_LONG).show();
-                                    mCapturedImage = convertImageToBitmap(image);
+
+                                    //Full Resolution Image Scaling & Rotation
+                                    Bitmap imageFullRes = convertImageToBitmap(image);
+                                    imageFullRes = rotateImage(imageFullRes, 90);
+                                    mCapturedImage = Bitmap.createScaledBitmap(imageFullRes, trueWidth, trueHeight,false);
+                                    Log.d(TAG, "Captured Image Width: "+ mCapturedImage.getWidth());
+                                    Log.d(TAG, "Captured Image Height: "+ mCapturedImage.getHeight());
+                                    Log.d(TAG, "Width: "+ trueWidth);
+                                    Log.d(TAG, "Height: "+ trueHeight);
                                     imageProxy.close();
                                     // TODO: Save captured' image and get faces for use in preview screen
                                 }
@@ -142,14 +152,13 @@ public class FaceTrackerActivity extends AppCompatActivity {
                     //Press Save
                     case BACK_SAVE:
                         // [TODO - for ECE 251 students only] Implement the Save feature.
-                        inPreview = false;
+                        inPreview = true;
                         //Check permissions
                         if(ActivityCompat.checkSelfPermission(FaceTrackerActivity.this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == 0) {
                             //Go to Storage Folder
                             String root = Environment.getExternalStorageDirectory().toString() + "/Pictures";
                             File myDir = new File(root);
                             myDir.mkdirs();
-                            //String f_name = String.format("%d.jpeg", System.currentTimeMillis());
                             String f_name = String.format("MaskMe.jpg", System.currentTimeMillis());
                             File file = new File(myDir, f_name);
                             if (file.exists()) file.delete();
@@ -157,7 +166,8 @@ public class FaceTrackerActivity extends AppCompatActivity {
                             Toast.makeText(FaceTrackerActivity.this, "Saved!", Toast.LENGTH_LONG).show();
                             try {
                                 FileOutputStream out = new FileOutputStream(file);
-                                mCapturedImage.compress(Bitmap.CompressFormat.JPEG, 100, out);
+                                Bitmap toSave = mImageView.save();
+                                toSave.compress(Bitmap.CompressFormat.JPEG, 100, out);
                                 out.flush();
                                 out.close();
                             } catch (Exception e) {
@@ -180,9 +190,12 @@ public class FaceTrackerActivity extends AppCompatActivity {
             switch(buttonsMode) {
                 //Press Preview
                 case PREVIEW_CAPTURE:
+                    mRightButton = findViewById(R.id.rightButton);
+                    mRightButton.setVisibility(View.VISIBLE);
                     inPreview = true;
-                    mCapturedImage = rotateImage(mCapturedImage, 90);
+                    // Set image view with image captured
                     mImageView.setImageBitmap(mCapturedImage);
+                    // Bring to front of preview view
                     mPreviewView.addView(mImageView);
                     mPreviewView.bringChildToFront(mImageView);
 
@@ -190,11 +203,25 @@ public class FaceTrackerActivity extends AppCompatActivity {
                     mCenterButton.setText("Save");
                     buttonsMode = ButtonsMode.BACK_SAVE;
 
+                    //Draw Listener
+                    mPreviewView.setOnTouchListener(new View.OnTouchListener() {
+                        @Override
+                        public boolean onTouch(View v, MotionEvent event) {
+                            //Grab Coordinates
+                            mImageView.grab(event.getX(), event.getY());
+                            return true;
+                        }
+                    });
+
                     drawMasksOnPreview(mCapturedImage);
                     break;
                 //Press Back
                 case BACK_SAVE:
+                    mRightButton.setVisibility(View.GONE);
                     mPreviewView.removeView(mImageView);
+                    //Clear Drawings
+                    mImageView.clear();
+                    //Change Button Text
                     mLeftButton.setText("Preview");
                     mCenterButton.setText("Capture");
                     buttonsMode = ButtonsMode.PREVIEW_CAPTURE;
@@ -204,8 +231,16 @@ public class FaceTrackerActivity extends AppCompatActivity {
             }
         });
 
+        // Add Clear
+        mRightButton = findViewById(R.id.rightButton);
+        mRightButton.setVisibility(View.GONE
+        );
+        mRightButton.setOnClickListener(view -> {
+            mImageView.clear();
+        });
+
         mImageView = new MaskedImageView(getApplicationContext());
-        mImageView.setScaleType(ImageView.ScaleType.FIT_XY);
+        mImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
 
         // Check for permissions before accessing the camera. If the permission is not
         // yet granted, request permission from the user.
@@ -219,6 +254,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
             requestCameraPermission();
         }
     }
+
 
     /**
      * Rotates a Bitmap by a specified angle in degrees.
@@ -285,14 +321,13 @@ public class FaceTrackerActivity extends AppCompatActivity {
 
     private void drawMasksOnPreview(Bitmap bitmap) {
         if (bitmap == null) return;
-        Log.d(TAG, "Bitmap Preview Width " + bitmap.getWidth());
-        Log.d(TAG, "Bitmap Preview Height" + bitmap.getHeight());
-        Bitmap resized = Bitmap.createScaledBitmap(bitmap, trueWidth, trueHeight,false );
         //Captured image shown in preview -- do processing on it
-        final InputImage image = InputImage.fromBitmap(resized, 0);
+        final InputImage image = InputImage.fromBitmap(bitmap, 0);
+
         //Grab which mask was selected
         SharedPreferences selectedMaskPref = getSharedPreferences("maskSelect", Context.MODE_PRIVATE);
         int selectedMask = selectedMaskPref.getInt("selected", 69);
+
         Log.d(TAG, "Mask Selected Preview: " + selectedMask);
         switch(selectedMask){
             case 0:
@@ -307,7 +342,7 @@ public class FaceTrackerActivity extends AppCompatActivity {
             default:
                 break;
         }
-        //SCALE THIS IMAGE
+
         // TODO: Using the input image, call the face detector
         Task<List<Face>> result = mFaceDetector.process(image)
                     .addOnSuccessListener(
@@ -449,8 +484,6 @@ public class FaceTrackerActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
 
-        // If you are using the front camera, change the last argument to true.
-        mGraphicOverlay.setCameraInfo(trueWidth, trueHeight, false);
     }
 
     /**

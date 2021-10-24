@@ -107,7 +107,7 @@ public class FaceGraphic extends GraphicOverlay.Graphic {
 
         //set own color -- white
         Paint color = new Paint();
-        color.setColor(COLOR_CHOICES[5]);
+        color.setColor(Color.WHITE);
         color.setStyle(Paint.Style.STROKE);
 
         myPreferences = context.getSharedPreferences("maskSelect", Context.MODE_PRIVATE);
